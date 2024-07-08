@@ -1,5 +1,6 @@
 # PooledBlockAlloc
 ### Status: Usable but not guarranteed bug-free
+### `PooledBlockAllocator`
 This repo provides `PooledBlockAllocator`, an allocator that uses a backing allocator and spilts its returned allocations
 into a pool of memory blocks of user-defined size. It is intended to be a middle-ground between the `GeneralPurposeAllocator`
 and the `PageAllocator`, but also comes with its own benefits:
@@ -73,7 +74,7 @@ fn main() !void {
 }
 ```
 
-### How to Help
+## How to Help
 If you are a zig or memory-allocation guru, I'd love some help producing ironclad tests for these components. Right now I make heavy use of `std.debug.assert` to verify internal logic in `Debug` mode. It is solid as-is, but it is likely I haven't covered all edge cases with asserts, nor do I know all the things I need to do in unit tests to cover them.
 
 In addition, simply tesing this allocator as an experimental drop-in replacement in your projects in `Debug` mode and reporting any errors or unexpected behavior will help locate any remaining bugs or shortcomings!
