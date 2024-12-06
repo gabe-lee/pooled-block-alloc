@@ -104,7 +104,7 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
             /// - `.len` => `.len`
             /// - `.len` => `.cap`
             ///
-            /// This operation sets this slice to an empty state
+            /// This operation sets this Slice to an empty state (the returned List now owns its previous memory)
             pub fn upgrade_into_list(self: *Slice) List {
                 const list = List{
                     .ptr = self.ptr,
@@ -124,7 +124,7 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
             /// - `list_len` => `.len`
             /// - `.len`     => `.cap`
             ///
-            /// This operation sets this slice to an empty state
+            /// This operation sets this Slice to an empty state (the returned List now owns its previous memory)
             pub fn upgrade_into_list_partial(self: *Slice, list_len: usize) List {
                 assert(list_len <= self.len);
                 const list = List{
@@ -623,10 +623,12 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
                 assert(idx < self.len);
                 const old_item = self.ptr[idx];
                 mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + 1 .. self.len]);
+                self.len -= 1;
                 return old_item;
             }
 
-            /// Remove the element at index `idx` swap the last element into its old idx
+            /// Remove the element at index `idx` swap the last element into its old idx.
+            /// Invalidates sorted element order for elements at or above 'idx' (if applicable)
             ///
             /// Returns the value removed
             ///
@@ -634,10 +636,181 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
             pub fn swap_remove(self: *List, idx: usize) T {
                 assert(idx < self.len);
                 if (self.len - 1 == idx) return self.pop();
-
                 const old_item = self.ptr[idx];
                 self.ptr[idx] = self.pop();
                 return old_item;
+            }
+
+            /// Remove many elements starting at index `idx` and shift down all the elements
+            /// above them.
+            ///
+            /// The values removed are returned as a newly allocated List using the same
+            /// allocator as this one and it in turn must be freed when no longer needed
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn remove_range(self: *List, idx: usize, count: usize) List {
+                assert(idx + count <= self.len);
+                if (count == 0) return BLANK_LIST;
+                const new_list = List.create_with_capacity(count);
+                const list_dst = new_list.append_slots_slice_ptr(count);
+                @memcpy(list_dst, self.ptr[idx .. idx + count]);
+                mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + count .. self.len]);
+                self.len -= count;
+                return new_list;
+            }
+
+            /// Remove many elements starting at index `idx` and swap them with elements from the end of the list
+            /// into their old indexes (in reversed order). Invalidates sorted element order for elements at or above 'idx' (if applicable)
+            ///
+            /// The values removed are returned as a newly allocated List using the same
+            /// allocator as this one and it in turn must be freed when no longer needed
+            ///
+            /// Invalidates element pointers to elements in positions `idx` and `len - 1`
+            pub fn swap_remove_range(self: *List, idx: usize, count: usize) List {
+                const range_end = idx + count;
+                assert(range_end <= self.len);
+                if (count == 0) return BLANK_LIST;
+                const new_list = List.create_with_capacity(count);
+                const list_dst = new_list.append_slots_slice_ptr(count);
+                @memcpy(list_dst, self.ptr[idx..range_end]);
+                var dst_i = idx;
+                var src_i = self.len - 1;
+                while (dst_i < range_end and src_i >= range_end) {
+                    self.ptr[dst_i] = self.ptr[src_i];
+                    dst_i += 1;
+                    src_i -= 1;
+                }
+                self.len -= count;
+                return new_list;
+            }
+
+            /// Delete the element at index `idx` and shift down all the elements
+            /// above it.
+            ///
+            /// Does not return the value
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn delete(self: *List, idx: usize) void {
+                assert(idx < self.len);
+                mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + 1 .. self.len]);
+                self.len -= 1;
+            }
+
+            /// Delete the element at index `idx` swap the last element into its old idx.
+            /// Invalidates sorted element order for elements at or above 'idx' (if applicable)
+            ///
+            /// Does not return the value
+            ///
+            /// Invalidates element pointers to elements in positions `idx` and `len - 1`
+            pub fn swap_delete(self: *List, idx: usize) void {
+                assert(idx < self.len);
+                if (self.len - 1 == idx) {
+                    self.len -= 1;
+                    return;
+                }
+                self.ptr[idx] = self.pop();
+                return;
+            }
+
+            /// Delete many elements starting at index `idx` and shift down all the elements
+            /// above them.
+            ///
+            /// Does not return the deleted values
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn delete_range(self: *List, idx: usize, count: usize) void {
+                assert(idx + count <= self.len);
+                if (count == 0) return;
+                mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + count .. self.len]);
+                self.len -= count;
+                return;
+            }
+
+            /// Delete many elements starting at index `idx` and swap them with elements from the end of the list
+            /// into their old indexes (in reversed order). Invalidates sorted element order for elements at or above 'idx' (if applicable)
+            ///
+            /// Does not return the deleted values
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn swap_delete_range(self: *List, idx: usize, count: usize) void {
+                const range_end = idx + count;
+                assert(range_end <= self.len);
+                if (count == 0) return;
+                var dst_i = idx;
+                var src_i = self.len - 1;
+                while (dst_i < range_end and src_i >= range_end) {
+                    self.ptr[dst_i] = self.ptr[src_i];
+                    dst_i += 1;
+                    src_i -= 1;
+                }
+                self.len -= count;
+                return;
+            }
+
+            /// Remove the element at index `idx` and shift down all the elements
+            /// above it.
+            ///
+            /// The value removed is copied into the provided mutable pointer 'dest', overwritting
+            /// its existing value
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn transplant(self: *List, idx: usize, dest: *T) void {
+                assert(idx < self.len);
+                dest.* = self.ptr[idx];
+                mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + 1 .. self.len]);
+                self.len -= 1;
+                return;
+            }
+
+            /// Remove the element at index `idx` and swap the last element into its old idx.
+            /// Invalidates sorted element order for elements at or above 'idx' (if applicable)
+            ///
+            /// The value removed is copied into the provided mutable pointer 'dest', overwritting
+            /// its existing value
+            ///
+            /// Invalidates element pointers to elements in positions `idx` and `len - 1`
+            pub fn swap_transplant(self: *List, idx: usize, dest: *T) void {
+                assert(idx < self.len);
+                dest.* = self.ptr[idx];
+                self.ptr[idx] = self.pop();
+                return;
+            }
+
+            /// Remove many elements starting at index `idx` and shift down all the elements
+            /// above them.
+            ///
+            /// The values removed are copied into the provided mutable slice 'dest', overwritting
+            /// any existing values in it. 'dest.len' must be >= 'count'
+            ///
+            /// Invalidates element pointers to elements in positions >= `idx`
+            pub fn transplant_range(self: *List, idx: usize, count: usize, dest: []T) void {
+                assert(idx + count <= self.len);
+                @memcpy(dest, self.ptr[idx .. idx + count]);
+                mem.copyForwards(T, self.ptr[idx..self.len], self.ptr[idx + count .. self.len]);
+                self.len -= count;
+                return;
+            }
+
+            /// Remove many elements starting at index `idx` and swap them with elements from the end of the list
+            /// into their old indexes (in reversed order). Invalidates sorted element order for elements at or above 'idx' (if applicable)
+            ///
+            /// The values removed are copied into the provided mutable slice 'dest' in their original order, overwritting
+            /// any existing values in it. 'dest.len' must be >= 'count'
+            ///
+            /// Invalidates element pointers to elements in ranges `idx..idx+count` and `len-count..len`
+            pub fn swap_transplant_range(self: *List, idx: usize, count: usize, dest: []T) void {
+                const range_end = idx + count;
+                assert(range_end <= self.len);
+                @memcpy(dest, self.ptr[idx..range_end]);
+                var dst_i = idx;
+                var src_i = self.len - 1;
+                while (dst_i < range_end and src_i >= range_end) {
+                    self.ptr[dst_i] = self.ptr[src_i];
+                    dst_i += 1;
+                    src_i -= 1;
+                }
+                self.len -= count;
+                return;
             }
 
             /// Append a slice of items to the end of the list.
