@@ -51,7 +51,7 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
             .len = 0,
             .cap = 0,
         };
-        const BLANK_SLICE = Self{
+        const BLANK_SLICE = Slice{
             .ptr = BLANK_PTR,
             .len = 0,
         };
