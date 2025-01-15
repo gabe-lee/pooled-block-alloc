@@ -343,7 +343,7 @@ pub fn define_with_sentinel_and_align(comptime T: type, comptime sentinel: ?T, c
                 if (min_cap == 0) {
                     return BLANK_LIST;
                 }
-                const q_slice = Slice.create_minimum(min_cap);
+                var q_slice = Slice.create_minimum(min_cap);
                 return q_slice.upgrade_into_list_partial(0);
             }
 

@@ -9,3 +9,4 @@ zig-out
 /docgen_tmp/
 .scratch
 /scrap
+.idea/
